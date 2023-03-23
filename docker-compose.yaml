@@ -103,7 +103,24 @@ services:
       replicas: 1
       restart_policy:
         condition: on-failure
-   
+
+  mysql:
+    image: mysql
+    container_name: nexus-mysql
+    environment:
+      - MYSQL_DATABASE=nexus
+      - MYSQL_USER=nexus
+      - MYSQL_PASSWORD=P@ssw0rd!
+      - MYSQL_ROOT_PASSWORD=P@ssw0rd!
+    ports:
+      - 3306:3306
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: nexus-azurite    
@@ -409,19 +426,3 @@ services:
       restart_policy:
         condition: on-failure   
         
-  mysql:
-    image: mysql
-    container_name: nexus-mysql
-    environment:
-      - MYSQL_DATABASE=nexus
-      - MYSQL_USER=nexus
-      - MYSQL_PASSWORD=P@ssw0rd!
-      - MYSQL_ROOT_PASSWORD=P@ssw0rd!
-    ports:
-      - 3306:3306
-    volumes:
-      - ./mysql/data:/var/lib/mysql
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure

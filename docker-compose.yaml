@@ -1,0 +1,427 @@
+version: '3.9'
+#Network
+networks:
+  ns-nexus:
+    driver: bridge
+
+#volume share
+volumes:
+  redis:
+    driver: local
+
+#service
+services:
+  postgres:
+    image: postgres:15.1
+    container_name: nexus-postgres
+    ports:
+      - 5432:5432
+    networks:
+      - ns-nexus
+    environment:
+      - POSTGRES_PASSWORD=P@ssw0rd!
+      - POSTGRES_USER=nexus
+      - POSTGRES_MULTIPLE_DATABASES=nexus,sonarqubedb
+    volumes:
+      - ./postgres/extensions/init-multi-postgres-databases.sh:/docker-entrypoint-initdb.d/init-multi-postgres-databases.sh
+      - ./postgres/data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  redis:
+    image: redis
+    container_name: nexus-redis
+    depends_on:
+      - postgres
+    links:
+      - postgres
+    ports:
+      - 4103:6379
+    networks:
+      - ns-nexus
+    command: redis-server --save 20 1 --loglevel warning --requirepass P@ssw0rd!
+    volumes:
+      - ./redis/data:/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  mongo:
+    image: mongo:latest
+    container_name: nexus-mongo
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=nexus
+      - MONGO_INITDB_ROOT_PASSWORD=P@ssw0rd!
+      - MONGO_INITDB_DATABASE=nexusdb
+    volumes:
+      - ./mongo/data:/data/db
+    ports:
+      - 27017:27017
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  oracle:
+    image: gvenzl/oracle-xe:21-full
+    container_name: nexus-oracle
+    ports:
+      - 1521:1521
+    environment:
+      - ORACLE_PASSWORD=P@ssw0rd!
+      - ORACLE_DATABASE=nexus
+      - APP_USER=nexus
+      - APP_USER_PASSWORD=P@ssw0rd!
+    volumes:
+      - ./oracle/data:/opt/oracle/oradata
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        
+  pocketbase:
+    image: pocketbase:0.11.2
+    container_name: nexus-pocketbase
+    build: 
+      context: ./pocketbase
+      dockerfile: Dockerfile
+    ports:
+      - 8090:8090
+    volumes:
+      - ./pocketbase/data:/pb_data
+      - ./pocketbase/public:/pb_public
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+   
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: nexus-azurite    
+    ports:
+      - 10000:10000
+      - 10001:10001
+      - 10002:10002
+    volumes:
+      - ./azurite:/data
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure    
+ 
+  adminer:
+    image: adminer
+    container_name: nexus-adminer
+    ports:
+      - 4012:8080
+    depends_on:
+      - postgres
+    links:
+      - postgres
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: nexus-pgadmin
+    ports:
+      - 4108:80
+    environment:
+      - POSTGRES_PASSWORD=P@ssw0rd!
+      - PGADMIN_DEFAULT_PASSWORD=P@ssw0rd!
+      - PGADMIN_DEFAULT_EMAIL=vatthanachai.w@gmail.com
+    depends_on:
+      - postgres
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  rabbit:
+    image: rabbitmq:3-management-alpine
+    container_name: nexus-rabbit
+    depends_on:
+      - postgres
+    links:
+      - postgres
+    ports:
+      - 4104:5672
+      - 4105:15672
+    environment:
+      - RABBITMQ_DEFAULT_USER=rabbit
+      - RABBITMQ_DEFAULT_PASS=P@ssw0rd!
+    volumes:
+      - ./rabbit/etc:/etc/rabbitmq/
+      - ./rabbit/data:/var/lib/rabbitmq/
+      - ./rabbit/logs:/var/log/rabbitmq/
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  sonarqube:
+    image: sonarqube:latest
+    container_name: nexus-sonarqube
+    depends_on:
+      - postgres
+    links:
+      - postgres
+    environment:
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonarqubedb
+      - SONAR_JDBC_USERNAME=nexus
+      - SONAR_JDBC_PASSWORD=P@ssw0rd!
+    volumes:
+      - ./sonar/conf:/opt/sonarqube/conf
+      - ./sonar/data:/opt/sonarqube/data      
+      - ./sonar/extensions:/opt/sonarqube/extensions
+      - ./sonar/plugins:/opt/sonarqube/lib/bundled-plugins      
+      - ./sonar/logs:/opt/sonarqube/logs
+    ports:
+      - 9900:9000
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  redmine:
+    image: redmine:latest
+    container_name: nexus-redmine
+    environment:
+      - REDMINE_DB_POSTGRES=postgres
+      - REDMINE_DB_PORT=5432
+      - REDMINE_DB_USERNAME=nexus
+      - REDMINE_DB_PASSWORD=P@ssw0rd!
+      - REDMINE_DB_ENCODING=utf8mb4
+      - REDMINE_SECRET_KEY_BASE=t^x3K7%4ZNgXACPk17pN
+    depends_on:
+      - postgres
+    ports:
+      - 3202:3000
+    networks:
+      - ns-nexus      
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.3
+    container_name: nexus-elasticsearch
+    environment:
+      - xpack.monitoring.templates.enabled=true
+      - xpack.watcher.enabled=false
+      - xpack.security.enabled=false
+      - discovery.type=single-node
+      - node.name=elasticsearch
+      - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
+      - ELASTIC_PASSWORD=P@ssw0rd!
+    volumes:      
+      - ./elk/elasticsearch/data:/usr/share/elasticsearch/data
+      - ./elk/elasticsearch/logs:/usr/share/elasticsearch/logs
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200      
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.5.3
+    container_name: nexus-kibana
+    environment:
+      - KIBANA_SYSTEM_PASSWORD=P@ssw0rd!
+    volumes:
+     - ./elk/kibana/config/kibana.yaml:/usr/share/kibana/config/kibana.yml:ro,Z
+    depends_on:
+      - elasticsearch      
+    links:
+      - elasticsearch
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 5601:5601
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  consul:
+    image: nexus-consul:1.14.3
+    container_name: nexus-consul
+    build:
+      context: ./consul
+      dockerfile: Dockerfile
+    ports:
+      - 8500:8500
+    command: agent -server -bind 0.0.0.0 -client 0.0.0.0 -bootstrap-expect 1 -config-file=/consul/config/config.json
+    volumes:
+      - ./consul/config/consul-config.json:/consul/config/config.json
+      - ./consul/data:/consul/data
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  vault:
+    image: nexus-vault:1.12.2
+    container_name: nexus-vault
+    build: 
+      context: ./vault
+      dockerfile: Dockerfile
+    ports:
+      - 8200:8200
+    volumes:
+      - ./vault/config:/vault/config
+      - ./vault/policies:/vault/policies
+      - ./vault/data:/vault/data
+      - ./vault/logs:/valut/logs
+    environment:
+      - VAULT_ADDR=http://127.0.0.1:8200
+    command: server -config=/vault/config/vault-config.json
+    cap_add:
+      - IPC_LOCK
+    depends_on:
+      - consul
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+
+  jenkin:
+    image: jenkins/jenkins:lts-dotnet
+    build: 
+      context: ./jenkin
+      dockerfile: Dockerfile
+    container_name: nexus-jenkin
+    privileged: true
+    user: root
+    environment:
+      - JAVA_OPTS="-Xmx1024m"
+    ports:
+      - 8080:8080
+      - 50000:50000
+    volumes:
+      - ./jenkin/data:/var/jenkins_home
+      - ./jenkin/logs:/var/log/jenkins
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure      
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: nexus-jaeger
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - 6831:6831/udp
+      - 6832:6832/udp
+      - 5775:5775/udp
+      - 5778:5778
+      - 16686:16686
+      - 4317:4317
+      - 4318:4318
+      - 14250:14250
+      - 14268:14268
+      - 14269:14269      
+      - 9411:9411
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure   
+
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: nexus-gitlab
+    hostname: 'localhost'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost'
+    ports:
+      - 8090:80
+      - 8093:443      
+    volumes:
+      - ./gitlab/config:/etc/gitlab
+      - ./gitlab/logs:/var/log/gitlab
+      - ./gitlab/data:/var/opt/gitlab
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure        
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:alpine
+    container_name: nexus-gitlab-runner
+    depends_on:
+      - gitlab
+    volumes:
+      - ./gitlab/runner/config/docker.sock:/var/run/docker.sock
+      - ./gitlab/runner/data:/etc/gitlab-runner
+    networks:
+      - ns-nexus
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure   
+        
+  mysql:
+    image: mysql
+    container_name: nexus-mysql
+    environment:
+      - MYSQL_DATABASE=nexus
+      - MYSQL_USER=nexus
+      - MYSQL_PASSWORD=P@ssw0rd!
+      - MYSQL_ROOT_PASSWORD=P@ssw0rd!
+    ports:
+      - 3306:3306
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
